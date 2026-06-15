@@ -2,5 +2,8 @@
   "name": "Streamer Dashboard",
   "description": "A minimal, responsive streaming dashboard with live chat, alerts, and remote BGM control.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API",
+    "MAJOR_CAPABILITY_OPEN_EXTERNAL_URLS"
+  ]
 }

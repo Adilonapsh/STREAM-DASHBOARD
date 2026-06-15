@@ -66,9 +66,9 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 // Constants for Client-Side Pusher Sync
-const BGM_PUSHER_KEY = '139242baf8e172b59182';
-const BGM_PUSHER_SECRET = '03741f84942d549a1ae8';
-const BGM_PUSHER_CLUSTER = 'ap1';
+const BGM_PUSHER_KEY = import.meta.env.VITE_PUSHER_KEY || '';
+const BGM_PUSHER_SECRET = import.meta.env.VITE_PUSHER_SECRET || '';
+const BGM_PUSHER_CLUSTER = import.meta.env.VITE_PUSHER_CLUSTER || '';
 
 export default function App() {
   // Firebase Auth States
