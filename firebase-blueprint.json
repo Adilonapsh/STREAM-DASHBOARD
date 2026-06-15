@@ -1,0 +1,24 @@
+{
+  "entities": {
+    "UserCredentials": {
+      "title": "User Credentials",
+      "description": "User specific credentials for stream controls, Discord and TipTap integration.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "discordUserId": { "type": "string" },
+        "deckId": { "type": "string" },
+        "tiptapPrivateKey": { "type": "string" },
+        "tiptapAlertWidgetId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "discordUserId", "deckId", "tiptapPrivateKey", "tiptapAlertWidgetId"]
+    }
+  },
+  "firestore": {
+    "user_credentials/{userId}": {
+      "schema": "UserCredentials",
+      "description": "User specific streamer configuration values"
+    }
+  }
+}
