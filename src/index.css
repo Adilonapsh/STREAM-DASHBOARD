@@ -21,16 +21,16 @@
 }
 
 .dark {
-  --bg-color: #0F172A;
-  --panel-bg: #1E293B;
-  --text-main: #F8FAFC;
-  --text-label: #94A3B8;
-  --border-color: #334155;
-  --dock-bg: rgba(15, 23, 42, 0.95);
-  --accent: #3B82F6;
-  --resizer-hover: #60A5FA;
-  --handle-color: #475569;
-  --glass: rgba(30, 41, 59, 0.8);
+  --bg-color: #18181b;
+  --panel-bg: #232326;
+  --text-main: #fafafa;
+  --text-label: #a1a1aa;
+  --border-color: #3f3f46;
+  --dock-bg: rgba(24, 24, 27, 0.95);
+  --accent: #7c3aed;
+  --resizer-hover: #a78bfa;
+  --handle-color: #52525b;
+  --glass: rgba(35, 35, 38, 0.8);
 }
 
 body {
