@@ -13,57 +13,8 @@ import {
   Music, Tv, Volume2, Sparkles, AlertCircle, RefreshCw,
   Eye, EyeOff, LogIn, LogOut, Loader2, ShieldCheck
 } from 'lucide-react';
-import { BgmVideo } from './types';
-import { auth, db } from './firebase';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User } from 'firebase/auth';
-import { doc, getDoc, setDoc, getDocFromServer } from 'firebase/firestore';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
+import { BgmVideo, User } from './types';
+// Removed Firebase imports
 
 // Constants for Client-Side Pusher Sync
 const BGM_PUSHER_KEY = import.meta.env.VITE_PUSHER_KEY || '';
@@ -71,50 +22,25 @@ const BGM_PUSHER_SECRET = import.meta.env.VITE_PUSHER_SECRET || '';
 const BGM_PUSHER_CLUSTER = import.meta.env.VITE_PUSHER_CLUSTER || '';
 
 export default function App() {
-  // Firebase Auth States
-  const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  // Skip Firebase Auth for now
+  const [user, setUser] = useState<User | null>({
+    uid: "demo-user",
+    email: "demo@example.com",
+    emailVerified: true,
+    isAnonymous: false,
+    displayName: "Demo User",
+    providerData: [],
+    tenantId: null,
+  });
+  const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthLoading(false);
-    }, (err) => {
-      console.error("Auth state change error:", err);
-      setAuthError(err.message);
-      setAuthLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
   const handleLogin = async () => {
-    setAuthLoading(true);
-    setAuthError(null);
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (err: any) {
-      console.error('Login error:', err);
-      if (err?.code === 'auth/popup-blocked') {
-        setAuthError('Browser memblokir sesi login (popup). Buka aplikasi ini di tab baru terlebih dahulu (Klik ikon panah luar di sudut kanan atas preview AI Studio).');
-      } else {
-        setAuthError(err?.message || 'Gagal masuk menggunakan Google');
-      }
-    } finally {
-      setAuthLoading(false);
-    }
+    // No-op for now, login is disabled
   };
 
   const handleLogout = async () => {
-    setAuthLoading(true);
-    try {
-      await signOut(auth);
-    } catch (err: any) {
-      console.error('Logout error:', err);
-    } finally {
-      setAuthLoading(false);
-    }
+    // No-op for now, logout is disabled
   };
 
   // Master Credentials/Credentials Configuration States
@@ -146,56 +72,38 @@ export default function App() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Run connection test as required by firebase skill
-    const testConnection = async () => {
-      try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
-      } catch (error) {
-        if(error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration.");
-        }
-      }
-    };
-    testConnection();
-  }, []);
-
-  useEffect(() => {
+    // Load credentials from localStorage only
     if (!user) {
       setCredentialsLoaded(false);
       return;
     }
 
-    const loadUserCredentials = async () => {
+    const loadUserCredentials = () => {
       setCredentialsLoading(true);
       try {
-        const docRef = doc(db, 'user_credentials', user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.discordUserId) {
-            setDiscordUserId(data.discordUserId);
-            setTempDiscordUserId(data.discordUserId);
-          }
-          if (data.deckId) {
-            setDeckId(data.deckId);
-            setTempDeckId(data.deckId);
-          }
-          if (data.tiptapPrivateKey) {
-            setTiptapPrivateKey(data.tiptapPrivateKey);
-            setTempTiptapPrivateKey(data.tiptapPrivateKey);
-          }
-          if (data.tiptapAlertWidgetId) {
-            setTiptapAlertWidgetId(data.tiptapAlertWidgetId);
-            setTempTiptapAlertWidgetId(data.tiptapAlertWidgetId);
-          }
+        const savedDiscordUserId = localStorage.getItem('master_discord_user_id');
+        const savedDeckId = localStorage.getItem('master_deck_id');
+        const savedTiptapPrivateKey = localStorage.getItem('master_tiptap_private_key');
+        const savedTiptapAlertWidgetId = localStorage.getItem('master_tiptap_alert_widget_id');
+
+        if (savedDiscordUserId) {
+          setDiscordUserId(savedDiscordUserId);
+          setTempDiscordUserId(savedDiscordUserId);
+        }
+        if (savedDeckId) {
+          setDeckId(savedDeckId);
+          setTempDeckId(savedDeckId);
+        }
+        if (savedTiptapPrivateKey) {
+          setTiptapPrivateKey(savedTiptapPrivateKey);
+          setTempTiptapPrivateKey(savedTiptapPrivateKey);
+        }
+        if (savedTiptapAlertWidgetId) {
+          setTiptapAlertWidgetId(savedTiptapAlertWidgetId);
+          setTempTiptapAlertWidgetId(savedTiptapAlertWidgetId);
         }
       } catch (err) {
-        console.error("Gagal memuat kredensial dari Firestore:", err);
-        try {
-          handleFirestoreError(err, OperationType.GET, `user_credentials/${user.uid}`);
-        } catch (e) {
-          // silently handle
-        }
+        console.error("Gagal memuat kredensial dari localStorage:", err);
       } finally {
         setCredentialsLoading(false);
         setCredentialsLoaded(true);
@@ -557,40 +465,61 @@ export default function App() {
   };
 
   // Drag and Resize Handlers using modern Pointer capture APIs
-  const handlePointerDown = (e: React.PointerEvent, type: 'v1' | 'v2' | 'h1') => {
-    setIsDragging(type);
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  };
+  useEffect(() => {
+    const handleWindowPointerMove = (e: PointerEvent) => {
+      if (!isDragging || !containerRef.current) return;
 
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging || !containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
 
-    const containerRect = containerRef.current.getBoundingClientRect();
-
-    if (isDragging === 'v1') {
-      const x = e.clientX - containerRect.left;
-      const percentage = (x / containerRect.width) * 100;
-      if (percentage > 10 && percentage < 80) {
-        setLeftWidth(percentage);
-      }
-    } else if (isDragging === 'v2') {
-      const x = e.clientX - containerRect.left;
-      const relativeX = x - (containerRect.width * leftWidth / 100);
-      const percentage = (relativeX / containerRect.width) * 100;
-      if (percentage > 10 && (leftWidth + percentage) < 90) {
-        setMidWidth(percentage);
-      }
-    } else if (isDragging === 'h1') {
-      const midControl = document.getElementById('panel-control');
-      if (midControl) {
-        const midRect = midControl.getBoundingClientRect();
-        const relativeY = e.clientY - midRect.top;
-        const percentage = (relativeY / midRect.height) * 100;
-        if (percentage > 10 && percentage < 90) {
-          setMidTopHeight(percentage);
+      if (isDragging === 'v1') {
+        const x = e.clientX - containerRect.left;
+        const percentage = (x / containerRect.width) * 100;
+        if (percentage > 10 && percentage < 80) {
+          setLeftWidth(percentage);
+        }
+      } else if (isDragging === 'v2') {
+        const x = e.clientX - containerRect.left;
+        const relativeX = x - (containerRect.width * leftWidth / 100);
+        const percentage = (relativeX / containerRect.width) * 100;
+        if (percentage > 10 && (leftWidth + percentage) < 90) {
+          setMidWidth(percentage);
+        }
+      } else if (isDragging === 'h1') {
+        const midControl = document.getElementById('panel-control');
+        if (midControl) {
+          const midRect = midControl.getBoundingClientRect();
+          const relativeY = e.clientY - midRect.top;
+          const percentage = (relativeY / midRect.height) * 100;
+          if (percentage > 10 && percentage < 90) {
+            setMidTopHeight(percentage);
+          }
         }
       }
+    };
+
+    const handleWindowPointerUp = () => {
+      if (isDragging) {
+        setIsDragging(null);
+      }
+    };
+
+    if (isDragging) {
+      window.addEventListener('pointermove', handleWindowPointerMove);
+      window.addEventListener('pointerup', handleWindowPointerUp);
+      window.addEventListener('pointercancel', handleWindowPointerUp);
     }
+
+    return () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerUp);
+    };
+  }, [isDragging, leftWidth, containerRef]);
+
+  const handlePointerDown = (e: React.PointerEvent, type: 'v1' | 'v2' | 'h1') => {
+    e.preventDefault();
+    setIsDragging(type);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -756,16 +685,14 @@ export default function App() {
       {/* CORE SPLIT-PANE CONTAINER */}
       <div 
         ref={containerRef}
-        onPointerMove={handlePointerMove}
-        className="panel-container flex-grow pt-12 pb-16 md:pb-0 flex h-screen select-none relative p-1"
-        onPointerUp={handlePointerUp}
+        className="panel-container flex-grow pt-12 pb-16 md:pb-0 flex h-screen select-none relative gap-0.5"
       >
         
         {/* PANEL LEFT: STREAM BOT DECKS */}
         <div 
           id="panel-deck" 
           style={{ width: isMobile ? '100%' : `${leftWidth}%` }}
-          className={`${activeMobileTab === 'deck' ? 'flex' : 'hidden'} md:flex flex-col flex-shrink-0 bg-[var(--panel-bg)] border border-[var(--border-color)] m-1 md:m-0.5 relative overflow-hidden`}
+          className={`${activeMobileTab === 'deck' ? 'flex' : 'hidden'} md:flex flex-col flex-shrink-0 bg-[var(--panel-bg)] border border-[var(--border-color)] relative overflow-hidden`}
         >
           {/* Deck iframe content */}
           <div className="flex-grow bg-[var(--bg-color)] relative">
@@ -782,7 +709,8 @@ export default function App() {
         {/* RESIZER 1 (Vertical) */}
         <div 
           onPointerDown={(e) => handlePointerDown(e, 'v1')}
-          className={`hidden md:flex w-2 hover:w-2 cursor-col-resize self-stretch items-center justify-center group shrink-0 transition-colors duration-150 ${isDragging === 'v1' ? 'bg-[var(--panel-bg)] text-[var(--accent)]' : 'hover:bg-[var(--panel-bg)] text-[var(--accent)]'}`}
+          className={`hidden md:flex w-3 hover:w-3 cursor-col-resize self-stretch items-center justify-center group shrink-0 transition-colors duration-150 ${isDragging === 'v1' ? 'bg-[var(--panel-bg)] text-[var(--accent)]' : 'hover:bg-[var(--panel-bg)] text-[var(--accent)]'}`}
+          style={{ touchAction: 'none' }}
         >
           <div className={`w-[2px] h-8 transition-colors duration-150 ${isDragging === 'v1' ? 'bg-[var(--accent)]' : 'bg-[var(--handle-color)] group-hover:bg-[var(--accent)]'}`} />
         </div>
@@ -791,7 +719,7 @@ export default function App() {
         <div 
           id="panel-control" 
           style={{ width: isMobile ? '100%' : `${midWidth}%` }}
-          className={`${activeMobileTab === 'control' ? 'flex' : 'hidden'} md:flex flex-col flex-shrink-0 self-stretch m-1 md:m-0.5`}
+          className={`${activeMobileTab === 'control' ? 'flex' : 'hidden'} md:flex flex-col flex-shrink-0 self-stretch`}
         >
           {/* Split Top: Alert Control Module */}
           <div 
@@ -818,7 +746,8 @@ export default function App() {
           {/* RESIZER H (Horizontal Splitter) */}
           <div 
             onPointerDown={(e) => handlePointerDown(e, 'h1')}
-            className={`hidden md:flex h-2 hover:h-2 cursor-row-resize items-center justify-center shrink-0 group transition-colors duration-150 ${isDragging === 'h1' ? 'bg-[var(--panel-bg)] text-[var(--accent)]' : 'hover:bg-[var(--panel-bg)] text-[var(--accent)]'}`}
+            className={`hidden md:flex h-3 hover:h-3 cursor-row-resize items-center justify-center shrink-0 group transition-colors duration-150 ${isDragging === 'h1' ? 'bg-[var(--panel-bg)] text-[var(--accent)]' : 'hover:bg-[var(--panel-bg)] text-[var(--accent)]'}`}
+            style={{ touchAction: 'none' }}
           >
             <div className={`h-[2px] w-10 transition-colors duration-150 ${isDragging === 'h1' ? 'bg-[var(--accent)]' : 'bg-[var(--handle-color)] group-hover:bg-[var(--accent)]'}`} />
           </div>
@@ -881,7 +810,8 @@ export default function App() {
         {/* RESIZER 2 (Vertical) */}
         <div 
           onPointerDown={(e) => handlePointerDown(e, 'v2')}
-          className={`hidden md:flex w-2 hover:w-2 cursor-col-resize self-stretch items-center justify-center group shrink-0 transition-colors duration-150 ${isDragging === 'v2' ? 'bg-[var(--panel-bg)] text-[var(--accent)]' : 'hover:bg-[var(--panel-bg)] text-[var(--accent)]'}`}
+          className={`hidden md:flex w-3 hover:w-3 cursor-col-resize self-stretch items-center justify-center group shrink-0 transition-colors duration-150 ${isDragging === 'v2' ? 'bg-[var(--panel-bg)] text-[var(--accent)]' : 'hover:bg-[var(--panel-bg)] text-[var(--accent)]'}`}
+          style={{ touchAction: 'none' }}
         >
           <div className={`w-[2px] h-8 transition-colors duration-150 ${isDragging === 'v2' ? 'bg-[var(--accent)]' : 'bg-[var(--handle-color)] group-hover:bg-[var(--accent)]'}`} />
         </div>
@@ -889,7 +819,7 @@ export default function App() {
         {/* PANEL RIGHT: CHAT & BGM MEDIA PANELS */}
         <div 
           id="panel-chat" 
-          className={`${activeMobileTab === 'chat' ? 'flex' : 'hidden'} md:flex flex-1 flex-col bg-[var(--panel-bg)] border border-[var(--border-color)] m-1 md:m-0.5 relative overflow-hidden`}
+          className={`${activeMobileTab === 'chat' ? 'flex' : 'hidden'} md:flex flex-1 flex-col bg-[var(--panel-bg)] border border-[var(--border-color)] relative overflow-hidden`}
         >
           
           {/* Chat Tab buttons */}
@@ -1331,16 +1261,7 @@ export default function App() {
                   setIsSaving(true);
                   setSaveError(null);
                   try {
-                    const docRef = doc(db, 'user_credentials', user.uid);
-                    await setDoc(docRef, {
-                      userId: user.uid,
-                      discordUserId: tempDiscordUserId,
-                      deckId: tempDeckId,
-                      tiptapPrivateKey: tempTiptapPrivateKey,
-                      tiptapAlertWidgetId: tempTiptapAlertWidgetId,
-                      updatedAt: new Date().toISOString()
-                    });
-
+                    // Save only to localStorage
                     setDiscordUserId(tempDiscordUserId);
                     localStorage.setItem('master_discord_user_id', tempDiscordUserId);
 
@@ -1355,13 +1276,8 @@ export default function App() {
 
                     setShowCredentialsModal(false);
                   } catch (err: any) {
-                    console.error("Gagal menyimpan kredensial ke Firestore:", err);
-                    setSaveError(err?.message || "Gagal menyimpan kredensial ke Firestore.");
-                    try {
-                      handleFirestoreError(err, OperationType.WRITE, `user_credentials/${user.uid}`);
-                    } catch (e) {
-                      // Handled
-                    }
+                    console.error("Gagal menyimpan kredensial:", err);
+                    setSaveError(err?.message || "Gagal menyimpan kredensial.");
                   } finally {
                     setIsSaving(false);
                   }

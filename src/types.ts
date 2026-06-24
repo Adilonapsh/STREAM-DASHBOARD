@@ -35,3 +35,13 @@ export interface LanyardResponse {
     activities: Activity[];
   };
 }
+
+export interface User {
+  uid: string;
+  email: string | null;
+  emailVerified: boolean;
+  isAnonymous: boolean;
+  displayName: string | null;
+  providerData: any[];
+  tenantId: string | null;
+}
