@@ -20,6 +20,7 @@ import { BgmVideo, User } from './types';
 const BGM_PUSHER_KEY = import.meta.env.VITE_PUSHER_KEY || '';
 const BGM_PUSHER_SECRET = import.meta.env.VITE_PUSHER_SECRET || '';
 const BGM_PUSHER_CLUSTER = import.meta.env.VITE_PUSHER_CLUSTER || '';
+const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY || '';
 
 export default function App() {
   // Skip Firebase Auth for now
@@ -160,10 +161,27 @@ export default function App() {
   const [bgmRoomId, setBgmRoomId] = useState(() => {
     return localStorage.getItem('bgm_room_id') || 'streamobsadilonapsh123';
   });
-  const [bgmIsConnected, setBgmIsConnected] = useState(false);
+  const [bgmIsConnected, setBgmIsConnected] = useState(() => {
+    const saved = localStorage.getItem('bgm_connected');
+    return saved ? saved === 'true' : true;
+  });
+
+  const setBgmConnected = (val: boolean) => {
+    setBgmIsConnected(val);
+    localStorage.setItem('bgm_connected', val ? 'true' : 'false');
+  };
   const [bgmVideos, setBgmVideos] = useState<BgmVideo[]>(() => {
-    const saved = localStorage.getItem('bgm_videos');
-    return saved ? JSON.parse(saved) : [{ id: 'jfKfPfyJRdk', title: 'Lofi Chill' }];
+    try {
+      const saved = localStorage.getItem('bgm_videos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error('Gagal memuat playlist:', e);
+      localStorage.removeItem('bgm_videos');
+    }
+    return [{ id: 'jfKfPfyJRdk', title: 'Lofi Chill' }];
   });
   const [bgmCurrentIdx, setBgmCurrentIdx] = useState(0);
   const [bgmIsPlaying, setBgmIsPlaying] = useState(false);
@@ -172,6 +190,10 @@ export default function App() {
   const [showBgmSettings, setShowBgmSettings] = useState(false);
   const [newBgmId, setNewBgmId] = useState('');
   const [newBgmTitle, setNewBgmTitle] = useState('');
+  const [bgmSearchQuery, setBgmSearchQuery] = useState('');
+  const [bgmSearchResults, setBgmSearchResults] = useState<any[]>([]);
+  const [bgmIsSearching, setBgmIsSearching] = useState(false);
+  const [bgmSearchError, setBgmSearchError] = useState<string | null>(null);
 
   // Mobile viewport checker
   const [isMobile, setIsMobile] = useState(false);
@@ -292,23 +314,95 @@ export default function App() {
     const channel = pusher.subscribe(`private-room-${currentActiveRoom}`);
     channelRef.current = channel;
 
+    // Track whether an existing member answered our sync request, and how
+    // many tracks that answer carried.
+    let gotResponse = false;
+    let responseCount = 0;
+    let publishTimer: number | null = null;
+
     channel.bind('pusher:subscription_succeeded', () => {
-      // Sync on connect
+      // Ask the room for its current state WITHOUT advertising our own
+      // playlist, so connecting never overwrites someone else's playlist.
       try {
         channel.trigger('client-sync-event', {
           action: 'REQUEST_SYNC',
           sender: pusher.connection.socket_id,
-          videos: bgmVideos,
-          idx: bgmCurrentIdx,
         });
       } catch (e) {
         console.error('Initial pusher sync err:', e);
       }
+
+      // If nobody answered (empty room) we take ownership and publish our
+      // playlist so the room stays in sync. A small delay lets responses
+      // arrive first.
+      publishTimer = window.setTimeout(() => {
+        const shouldPublish = bgmVideos.length > 0 && (!gotResponse || responseCount < bgmVideos.length);
+        if (!shouldPublish) return;
+        try {
+          channel.trigger('client-sync-event', {
+            action: 'PLAYLIST_UPDATE',
+            sender: pusher.connection.socket_id,
+            videos: bgmVideos,
+            idx: bgmCurrentIdx,
+            isPlaying: bgmIsPlaying,
+            currentTime: bgmLocalCurrentTime,
+            duration: bgmLocalDuration,
+          });
+        } catch (e) {
+          console.error('Pusher publish err:', e);
+        }
+      }, 1200);
     });
 
     channel.bind('client-sync-event', (data: any) => {
       if (data.sender === pusher.connection.socket_id) return;
 
+      // A new member joined and asked for the current room state.
+      if (data.action === 'REQUEST_SYNC') {
+        if (bgmVideos.length > 0) {
+          try {
+            channel.trigger('client-sync-event', {
+              action: 'SYNC_RESPONSE',
+              sender: pusher.connection.socket_id,
+              videos: bgmVideos,
+              idx: bgmCurrentIdx,
+              isPlaying: bgmIsPlaying,
+              currentTime: bgmLocalCurrentTime,
+              duration: bgmLocalDuration,
+            });
+          } catch (e) {
+            console.error('Pusher respond err:', e);
+          }
+        }
+        return;
+      }
+
+      // Answer to our REQUEST_SYNC: only adopt it when it is non-empty and
+      // not smaller than the playlist we already have, so a stale or empty
+      // client can never wipe the playlist we just built.
+      if (data.action === 'SYNC_RESPONSE') {
+        gotResponse = true;
+        responseCount = data.videos ? data.videos.length : 0;
+        if (data.videos && data.videos.length > 0 && data.videos.length >= bgmVideos.length) {
+          setBgmVideos(data.videos);
+          localStorage.setItem('bgm_videos', JSON.stringify(data.videos));
+        }
+        if (data.idx !== undefined) {
+          setBgmCurrentIdx(data.idx);
+        }
+        if (data.isPlaying !== undefined) {
+          setBgmIsPlaying(data.isPlaying);
+        }
+        if (data.currentTime !== undefined) {
+          setBgmLocalCurrentTime(data.currentTime);
+        }
+        if (data.duration !== undefined) {
+          setBgmLocalDuration(data.duration);
+        }
+        return;
+      }
+
+      // Regular updates (PLAYLIST_UPDATE, CHANGE_VIDEO, TOGGLE_PLAY, SEEK_VIDEO)
       if (data.videos) {
         setBgmVideos(data.videos);
         localStorage.setItem('bgm_videos', JSON.stringify(data.videos));
@@ -328,6 +422,9 @@ export default function App() {
     });
 
     return () => {
+      if (publishTimer !== null) {
+        clearTimeout(publishTimer);
+      }
       channel.unbind_all();
       pusher.unsubscribe(`private-room-${currentActiveRoom}`);
       pusher.disconnect();
@@ -336,7 +433,11 @@ export default function App() {
 
   // Keep tracks stored
   useEffect(() => {
-    localStorage.setItem('bgm_videos', JSON.stringify(bgmVideos));
+    try {
+      localStorage.setItem('bgm_videos', JSON.stringify(bgmVideos));
+    } catch (e) {
+      console.error('Gagal menyimpan playlist:', e);
+    }
   }, [bgmVideos]);
 
   // Local clock emulator for play timeline status
@@ -413,6 +514,43 @@ export default function App() {
     setBgmVideos(updated);
     setNewBgmId('');
     setNewBgmTitle('');
+    broadcastBgmState('PLAYLIST_UPDATE', { videos: updated });
+  };
+
+  const searchBgmTracks = async () => {
+    const query = bgmSearchQuery.trim();
+    if (!query) return;
+    if (!YOUTUBE_API_KEY) {
+      setBgmSearchError('YOUTUBE_API_KEY belum di-set di .env');
+      return;
+    }
+    setBgmIsSearching(true);
+    setBgmSearchError(null);
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=6&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`
+      );
+      const data = await res.json();
+      if (data.error) {
+        throw new Error(data.error.message || 'YouTube API error');
+      }
+      setBgmSearchResults(data.items || []);
+    } catch (err) {
+      console.error('YouTube search error:', err);
+      setBgmSearchError('Gagal mencari video.');
+    } finally {
+      setBgmIsSearching(false);
+    }
+  };
+
+  const addFromBgmSearch = (track: any) => {
+    const videoId = track?.id?.videoId;
+    if (!videoId) return;
+    const updated = [
+      ...bgmVideos,
+      { id: videoId, title: track.snippet?.title || 'Untitled' },
+    ];
+    setBgmVideos(updated);
     broadcastBgmState('PLAYLIST_UPDATE', { videos: updated });
   };
 
@@ -951,7 +1089,7 @@ export default function App() {
                   <div className="flex gap-2">
                     <button 
                       onClick={() => {
-                        setBgmIsConnected(true);
+                        setBgmConnected(true);
                         setShowBgmSettings(false);
                       }}
                       className="flex-1 py-2 text-xs font-medium text-[var(--bg-color)] bg-[var(--accent)] rounded-md cursor-pointer"
@@ -961,7 +1099,7 @@ export default function App() {
                     {bgmIsConnected && (
                       <button 
                         onClick={() => {
-                          setBgmIsConnected(false);
+                          setBgmConnected(false);
                           setShowBgmSettings(false);
                         }}
                         className="flex-1 py-2 text-xs font-medium text-red-500 bg-red-500/10 rounded-md cursor-pointer"
@@ -1058,6 +1196,48 @@ export default function App() {
 
               {/* Add Track */}
               <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={bgmSearchQuery}
+                    onChange={(e) => setBgmSearchQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') searchBgmTracks(); }}
+                    placeholder="Cari lagu..."
+                    className="flex-1 text-xs px-3 py-2 border border-[var(--border-color)] bg-[var(--panel-bg)] text-[var(--text-main)] rounded-md"
+                  />
+                  <button 
+                    onClick={searchBgmTracks}
+                    disabled={bgmIsSearching}
+                    className="px-3 py-2 text-xs font-medium text-[var(--bg-color)] bg-[var(--accent)] rounded-md cursor-pointer disabled:opacity-50"
+                  >
+                    {bgmIsSearching ? '...' : 'Cari'}
+                  </button>
+                </div>
+
+                {bgmSearchError && (
+                  <p className="text-[10px] text-red-500">{bgmSearchError}</p>
+                )}
+
+                {bgmSearchResults.length > 0 && (
+                  <div className="space-y-1 border border-[var(--border-color)] rounded-md p-1.5 max-h-48 overflow-y-auto">
+                    {bgmSearchResults.map((track: any) => (
+                      <div
+                        key={track.id?.videoId}
+                        onClick={() => addFromBgmSearch(track)}
+                        className="p-2 cursor-pointer flex items-center gap-2 rounded-md transition-colors hover:bg-[var(--panel-bg)]"
+                      >
+                        {track.snippet?.thumbnails?.default?.url && (
+                          <img src={track.snippet.thumbnails.default.url} alt="" className="w-8 h-8 rounded object-cover bg-[var(--bg-color)] shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs truncate text-[var(--text-main)]">{track.snippet?.title}</p>
+                          <p className="text-[10px] truncate text-[var(--text-label)]">{track.snippet?.channelTitle}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <input 
                   type="text" 
                   value={newBgmId}
